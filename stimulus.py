@@ -100,6 +100,15 @@ class MultiStimulus:
                 [self.task_dm_dly, 'ctx_dm2_dly'],
                 [self.task_dm_dly, 'multsen_dm_dly']
             ]
+
+        elif par['task'] == 'dmrs':
+            self.task_types = [
+                [self.task_matching, 'dms', 0],
+                [self.task_matching, 'dms', np.pi/2],
+                [self.task_matching, 'dms', np.pi],
+                [self.task_matching, 'dms', 3*np.pi/2],
+            ]
+
         else:
             raise Exception('Multistimulus task type \'{}\' not yet implemented.'.format(par['task']))
 
@@ -120,7 +129,7 @@ class MultiStimulus:
             rule_signal = np.zeros((1,1,par['num_rule_tuned']))
             rule_signal[0,0,current_task] = par['tuning_height']
             self.trial_info['neural_input'][:, :, -par['num_rule_tuned']:] += rule_signal*self.rule_signal_factor
-
+  
         task = self.task_types[current_task]    # Selects a task from the list
         task[0](*task[1:])                      # Generates that task into trial_info
 
@@ -388,15 +397,15 @@ class MultiStimulus:
         return self.trial_info
 
 
-    def task_matching(self, variant='dms'):
+    def task_matching(self, variant='dms', offset=0):
 
         # Determine matches, and get stimuli
         if variant in ['dms', 'dnms']:
             stim1 = np.random.choice(self.motion_dirs, par['batch_size'])
-            nonmatch = (stim1 + np.random.choice(self.motion_dirs[1:], par['batch_size']))%(2*np.pi)
+            nonmatch = (stim1 + offset + np.random.choice(self.motion_dirs[1:], par['batch_size']))%(2*np.pi)
 
             match = np.random.choice(np.array([True, False]), par['batch_size'])
-            stim2 = np.where(match, stim1, nonmatch)
+            stim2 = np.where(match, (stim1+offset)%(2*np.pi), nonmatch)
 
         elif variant in ['dmc', 'dnmc']:
             stim1 = np.random.choice(self.motion_dirs, par['batch_size'])

@@ -34,7 +34,7 @@ par = {
     # Timings and rates
     'dt'                    : 20,
     'learning_rate'         : 1e-3,
-    'membrane_time_constant': 100,
+    'membrane_time_constant': 200,
     'connection_prob'       : 1.0,
     'discount_rate'         : 0.,
 
@@ -45,8 +45,10 @@ par = {
     'noise_rnn_sd'          : 0.05,
 
     # Task specs
-    'task'                  : 'multistim',  # See stimulus file for more options
-    'n_tasks'               : 20,
+    #'task'                  : 'multistim',  # See stimulus file for more options
+    #'n_tasks'               : 20,
+    'task'                  : 'dmrs',
+    'n_tasks'               : 4,
     'multistim_trial_length': 2000,
     'mask_duration'         : 0,
     'dead_time'             : 200,
@@ -56,8 +58,8 @@ par = {
     'tuning_height'         : 4.0,          # von Mises magnitude scaling factor
 
     # Cost values
-    'spike_cost'            : 1e-7,
-    'weight_cost'           : 0.,
+    'spike_cost'            : 1., #1e-7,
+    'weight_cost'           : 1e-3,
     'entropy_cost'          : 0.001,
     'val_cost'              : 0.01,
 
@@ -166,6 +168,7 @@ def update_dependencies():
     c = 0.05
 
     par['W_in_init'] = np.float32(np.random.gamma(shape=0.25, scale=1.0, size = [par['n_input'], par['n_hidden']]))
+    par['W_in_init']  = np.float32(np.random.uniform(-c, c, size = [par['n_input'], par['n_hidden']]))
     par['W_out_init'] = np.float32(np.random.uniform(-c, c, size = [par['n_hidden'], par['n_output']]))
 
     if par['EI']:
