@@ -83,7 +83,7 @@ class Model:
 				tf.reduce_mean(tf.abs(self.var_dict['W_rnn'][:,ind])) )
 
 			losses.append(this_loss)
-			ops.append(opt.compute_gradients(l))
+			ops.append(opt.compute_gradients(this_loss))
 
 		self.train = tf.group(*ops)
 		self.loss = tf.reduce_mean(tf.stack(losses))
