@@ -28,20 +28,23 @@ class Model:
 		self.optimize()
 
 	def declare_variables(self):
-		
+
 		self.var_dict = {}
-		
+
 		W_in_list = []
-		W_rnn_list = []
+		W_rnn_exc_list = []
+		W_rnn_inh_list = []
 		for j in range(par['n_hidden']):
 			W_in_list.append(tf.get_variable('W_in{}'.format(j), initializer=par['W_in_init'][:,j]))
-			W_rnn_list.append(tf.get_variable('W_rnn{}'.format(j), initializer=par['W_rnn_init'][:,j]))
+			W_rnn_exc_list.append(tf.get_variable('W_rnn_exc{}'.format(j), initializer=par['W_rnn_exc_init'][:,j]))
+			W_rnn_inh_list.append(tf.get_variable('W_rnn_inh{}'.format(j), initializer=par['W_rnn_inh_init'][:,j]))
 		self.var_dict['W_in'] = tf.stack(W_in_list, axis=-1)
-		self.var_dict['W_rnn'] = tf.stack(W_rnn_list, axis=-1) * tf.constant(par['W_rnn_mask'])
+		self.var_dict['W_rnn_exc'] = tf.stack(W_rnn_exc_list, axis=-1) * tf.constant(par['W_rnn_mask'])
+		self.var_dict['W_rnn_inh'] = tf.stack(W_rnn_inh_list, axis=-1) * tf.constant(par['W_rnn_mask'])
 
 		self.hidden_optimizers = []
 		for j in range(par['n_hidden']):
-			self.hidden_optimizers.append(AdamOpt([W_in_list[j],W_rnn_list[j]]))
+			self.hidden_optimizers.append(AdamOpt([W_in_list[j],W_rnn_exc_list[j], W_rnn_inh_list[j]]))
 
 	def run_model(self):
 
@@ -51,15 +54,32 @@ class Model:
 		h = tf.zeros([par['batch_size'], par['n_hidden']])
 		c = tf.zeros([par['batch_size'], par['n_hidden']])
 
+		Z_in = tf.sqrt(tf.reduce_sum(self.var_dict['W_in']**2, axis = 0, keep_dims = True))
+		self.var_dict['W_rnn_exc'] *= par['W_rnn_mask']
+		self.var_dict['W_rnn_inh'] *= par['W_rnn_mask']
+		Z_rnn_exc = tf.sqrt(tf.reduce_sum(tf.nn.relu(self.var_dict['W_rnn_exc'])**2, axis = 0, keep_dims = True))
+		Z_rnn_inh = tf.sqrt(tf.reduce_sum(tf.nn.relu(self.var_dict['W_rnn_inh'])**2, axis = 0, keep_dims = True))
+
+		self.W_in = self.var_dict['W_in']/Z_in
+
 		for t in range(par['num_time_steps']):
-			c = (1-par['alpha_neuron'])*c + par['alpha_neuron']*(h @ self.var_dict['W_rnn'])
-			h = self.input_data[t] @ self.var_dict['W_in'] + h @ self.var_dict['W_rnn']
-			h = tf.nn.relu(h)
-			h = h / tf.reduce_max(h+1e-9, axis=1, keepdims=True)
 
+			#input_data = self.input_data[t]/tf.reduce_sum(self.input_data[t]+1e-9, axis=1, keep_dims=True)
+			#input_data = self.input_data[t] - tf.reduce_mean(self.input_data[t], axis=(0,1), keep_dims=True)
+
+			rnn_exc =  h @ (par['W_rnn_mask']*tf.nn.relu(self.var_dict['W_rnn_exc'])/Z_rnn_exc)
+			rnn_inh =  h @ (par['W_rnn_mask']*tf.nn.relu(self.var_dict['W_rnn_inh'])/Z_rnn_inh)
+			h = self.input_data[t] @ self.var_dict['W_in']/Z_in + tf.random_normal(tf.shape(h), 0., 0.1)
+
+			h = tf.nn.softmax(2*tf.nn.sigmoid(c)*h, dim = -1)
 			self.raw_hidden_hist.append(h)
+			#normalization = 0.01 + h @ par['norm_matrix']
+			#h = tf.nn.relu(h - normalization)
+			#h /= normalization
 
-			h = h * tf.nn.sigmoid(c)
+
+
+			c = (1-par['alpha_neuron'])*c + par['alpha_neuron']*(rnn_exc - rnn_inh)
 
 			self.hidden_hist.append(h)
 			self.gate_hist.append(tf.nn.sigmoid(c))
@@ -70,7 +90,7 @@ class Model:
 
 
 	def optimize(self):
-		
+
 		loss = tf.unstack(tf.reduce_mean(self.hidden_hist**2, axis=(0,1)), axis=0)
 
 		ops = []
@@ -78,9 +98,12 @@ class Model:
 		for ind, (l, opt) in enumerate(zip(loss, self.hidden_optimizers)):
 
 			this_loss  = -par['spike_cost']*l
+			"""
 			this_loss += par['weight_cost']*( \
-				tf.reduce_mean(tf.abs(self.var_dict['W_in'][:,ind])) + \
-				tf.reduce_mean(tf.abs(self.var_dict['W_rnn'][:,ind])) )
+				tf.reduce_mean(tf.abs(self.var_dict['W_in'][:,ind])**1) + \
+				tf.reduce_mean(tf.abs(self.var_dict['W_rnn'][:,ind])**1)/10 )
+			"""
+
 
 			losses.append(this_loss)
 			ops.append(opt.compute_gradients(this_loss))
@@ -119,21 +142,41 @@ def main(gpu_id=None):
 
 		task = 1
 		for i in range(par['n_train_batches']):
-			_, inputs, outputs, mask, _ = stim.generate_trial(task)
-			
+			_, inputs, outputs, mask, _, sample, test, match = stim.generate_trial(task)
+
 			feed_dict = {x:inputs, y:outputs, m:mask}
-			_, loss, h, c, hc = sess.run([model.train, model.loss, model.raw_hidden_hist, model.gate_hist, model.hidden_hist], feed_dict=feed_dict)
+			_, loss, h, c, hc, W_in = sess.run([model.train, model.loss, model.raw_hidden_hist, model.gate_hist, \
+				model.hidden_hist, model.W_in], feed_dict=feed_dict)
 
-			if i%25 == 0:
-				print('Iter: {:>4} | h-Loss: {:5.3f} |'.format(i, loss))
+			if i%100 == 0:
+				print('Iter: {:>4} | h-Loss: {:5.8f} |'.format(i, loss))
 
-				fig, ax = plt.subplots(4,4, figsize=(10,10))
+				ind = np.zeros((4), dtype = np.int8)
+				ind[0] = np.where((test==0)*(match==1))[0][0]
+				ind[1] = np.where((test==0)*(match==0))[0][0]
+				ind[2] = np.where((test==4)*(match==1))[0][0]
+				ind[3] = np.where((test==4)*(match==0))[0][0]
+
+				max_vals = [[] for _ in range(4)]
+				min_vals = [[] for _ in range(4)]
+				for b in range(4):
+					max_vals[0].append(np.max(inputs[:,ind[b],:]))
+					max_vals[1].append(np.max(h[:,ind[b],:]))
+					max_vals[2].append(np.max(c[:,ind[b],:]))
+					max_vals[3].append(np.max(hc[:,ind[b],:]))
+					min_vals[0].append(np.min(inputs[:,ind[b],:]))
+					min_vals[1].append(np.min(h[:,ind[b],:]))
+					min_vals[2].append(np.min(c[:,ind[b],:]))
+					min_vals[3].append(np.min(hc[:,ind[b],:]))
+
+				fig, ax = plt.subplots(5,4, figsize=(10,10))
 				plt.suptitle('Network States (TF version)')
 				for b in range(4):
-					x0 = ax[0,b].imshow(inputs[:,b,:].T, clim=(0,par['tuning_height']), aspect='auto')
-					x1 = ax[1,b].imshow(h[:,b,:].T, aspect='auto')
-					x2 = ax[2,b].imshow(c[:,b,:].T, aspect='auto')
-					x3 = ax[3,b].imshow(hc[:,b,:].T, aspect='auto')
+					x0 = ax[0,b].imshow(inputs[:,ind[b],:].T, aspect='auto', clim = (np.min(min_vals[0]), np.max(max_vals[0])))
+					x1 = ax[1,b].imshow(h[:,ind[b],:].T, aspect='auto', clim = (np.min(min_vals[1]), np.max(max_vals[1])))
+					x2 = ax[2,b].imshow(c[:,ind[b],:].T, aspect='auto', clim = (np.min(min_vals[2]), np.max(max_vals[2])))
+					x3 = ax[3,b].imshow(hc[:,ind[b],:].T, aspect='auto', clim = (np.min(min_vals[3]), np.max(max_vals[3])))
+					x4 = ax[4,b].imshow(W_in, aspect='auto')
 
 				ax[0,0].set_ylabel('Inputs')
 				ax[1,0].set_ylabel('$\\sigma$(c)')
@@ -141,10 +184,16 @@ def main(gpu_id=None):
 				ax[3,0].set_ylabel('h*$\\sigma$(c)')
 				ax[3,0].set_xlabel('Time Steps')
 
+				ax[0,0].set_title('MATCH Test=0')
+				ax[0,1].set_title('NON-MATCH Test=0')
+				ax[0,2].set_title('MATCH Test=4')
+				ax[0,3].set_title('NON-MATCH Test=4')
+
 				plt.colorbar(x0, ax=ax[0,b])
 				plt.colorbar(x1, ax=ax[1,b])
 				plt.colorbar(x2, ax=ax[2,b])
 				plt.colorbar(x3, ax=ax[3,b])
+				plt.colorbar(x4, ax=ax[4,b])
 				plt.savefig('./plotdir/iter{}.png'.format(i))
 				plt.clf()
 				plt.close()

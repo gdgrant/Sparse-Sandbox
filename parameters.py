@@ -25,17 +25,17 @@ par = {
 
     # Network shape
     'num_motion_tuned'      : 48,
-    'num_fix_tuned'         : 4,
+    'num_fix_tuned'         : 2,
     'num_rule_tuned'        : 0,
-    'n_hidden'              : 64,
+    'n_hidden'              : 50,
     'n_val'                 : 1,
-    'include_rule_signal'   : True,
+    'include_rule_signal'   : False,
 
     # Timings and rates
     'dt'                    : 20,
-    'learning_rate'         : 1e-3,
+    'learning_rate'         : 2e-3,
     'membrane_time_constant': 200,
-    'connection_prob'       : 1.0,
+    'connection_prob'       : 0.1,
     'discount_rate'         : 0.,
 
     # Variance values
@@ -49,7 +49,7 @@ par = {
     #'n_tasks'               : 20,
     'task'                  : 'dmrs',
     'n_tasks'               : 4,
-    'multistim_trial_length': 2000,
+    'multistim_trial_length': 1500,
     'mask_duration'         : 0,
     'dead_time'             : 200,
 
@@ -59,7 +59,7 @@ par = {
 
     # Cost values
     'spike_cost'            : 1., #1e-7,
-    'weight_cost'           : 1e-3,
+    'weight_cost'           : 0.,
     'entropy_cost'          : 0.001,
     'val_cost'              : 0.01,
 
@@ -71,7 +71,7 @@ par = {
 
     # Training specs
     'batch_size'            : 256,
-    'n_train_batches'       : 5000, #50000,
+    'n_train_batches'       : 100000, #50000,
 
     # Omega parameters
     'omega_c'               : 2.,
@@ -154,6 +154,15 @@ def update_dependencies():
     # Set trial step length
     par['num_time_steps'] = par['multistim_trial_length']//par['dt']
 
+    par['norm_matrix'] = np.zeros((par['n_hidden'], par['n_hidden']), dtype = np.float32)
+    N = par['n_hidden']//4
+    N = 20
+    for i in range(par['n_hidden']):
+        #j = N*(i//N)
+        u = np.arange(i,i+N)%par['n_hidden']
+        par['norm_matrix'][i, u] = 1.
+        #par['norm_matrix'][i, i] = 0.
+
     # Set up gating vectors for hidden layer
     gen_gating()
 
@@ -172,12 +181,15 @@ def update_dependencies():
     par['W_out_init'] = np.float32(np.random.uniform(-c, c, size = [par['n_hidden'], par['n_output']]))
 
     if par['EI']:
-        par['W_rnn_init'] = c*np.float32(np.random.gamma(shape=0.25, scale=1.0, size = [par['n_hidden'], par['n_hidden']]))
+        par['W_rnn_init'] = np.float32(np.random.gamma(shape=0.1, scale=1.0, size = [par['n_hidden'], par['n_hidden']]))
         par['W_rnn_mask'] = np.ones((par['n_hidden'], par['n_hidden']), dtype=np.float32) - np.eye(par['n_hidden'])
         par['W_rnn_init'] *= par['W_rnn_mask']
     else:
-        par['W_rnn_init'] = np.float32(np.random.uniform(-c, c, size = [par['n_hidden'], par['n_hidden']]))
-        par['W_rnn_mask'] = np.ones((par['n_hidden'], par['n_hidden']), dtype=np.float32)
+        par['W_rnn_exc_init'] = np.float32(np.random.gamma(shape=0.1, scale=1.0, size = [par['n_hidden'], par['n_hidden']]))
+        par['W_rnn_inh_init'] = np.float32(np.random.gamma(shape=0.1, scale=1.0, size = [par['n_hidden'], par['n_hidden']]))
+        par['W_rnn_mask'] = np.ones((par['n_hidden'], par['n_hidden']), dtype=np.float32) - np.eye(par['n_hidden'], dtype=np.float32)
+        par['W_rnn_exc_init'] *= par['W_rnn_mask']
+        par['W_rnn_inh_init'] *= par['W_rnn_mask']
 
     # Initialize biases
     par['b_rnn_init'] = np.zeros((1,par['n_hidden']), dtype = np.float32)
