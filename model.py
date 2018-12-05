@@ -85,7 +85,7 @@ def main():
 	model = Model()
 
 	for i in range(par['n_train_batches']):
-		task = 1
+		task = 16
 
 		_, inputs, outputs, mask, _ = stim.generate_trial(task)
 		model.load_batch(inputs, outputs, mask)
