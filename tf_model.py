@@ -32,16 +32,19 @@ class Model:
 		self.var_dict = {}
 
 		W_in_list = []
-		W_rnn_list = []
+		W_rnn_exc_list = []
+		W_rnn_inh_list = []
 		for j in range(par['n_hidden']):
 			W_in_list.append(tf.get_variable('W_in{}'.format(j), initializer=par['W_in_init'][:,j]))
-			W_rnn_list.append(tf.get_variable('W_rnn{}'.format(j), initializer=par['W_rnn_init'][:,j]))
+			W_rnn_exc_list.append(tf.get_variable('W_rnn_exc{}'.format(j), initializer=par['W_rnn_exc_init'][:,j]))
+			W_rnn_inh_list.append(tf.get_variable('W_rnn_inh{}'.format(j), initializer=par['W_rnn_inh_init'][:,j]))
 		self.var_dict['W_in'] = tf.stack(W_in_list, axis=-1)
-		self.var_dict['W_rnn'] = tf.stack(W_rnn_list, axis=-1) * tf.constant(par['W_rnn_mask'])
+		self.var_dict['W_rnn_exc'] = tf.stack(W_rnn_exc_list, axis=-1) * tf.constant(par['W_rnn_mask'])
+		self.var_dict['W_rnn_inh'] = tf.stack(W_rnn_inh_list, axis=-1) * tf.constant(par['W_rnn_mask'])
 
 		self.hidden_optimizers = []
 		for j in range(par['n_hidden']):
-			self.hidden_optimizers.append(AdamOpt([W_in_list[j],W_rnn_list[j]]))
+			self.hidden_optimizers.append(AdamOpt([W_in_list[j],W_rnn_exc_list[j], W_rnn_inh_list[j]]))
 
 	def run_model(self):
 
@@ -52,7 +55,10 @@ class Model:
 		c = tf.zeros([par['batch_size'], par['n_hidden']])
 
 		Z_in = tf.sqrt(tf.reduce_sum(self.var_dict['W_in']**2, axis = 0, keep_dims = True))
-		Z_rnn = tf.sqrt(tf.reduce_sum(self.var_dict['W_rnn']**2, axis = 0, keep_dims = True))
+		self.var_dict['W_rnn_exc'] *= par['W_rnn_mask']
+		self.var_dict['W_rnn_inh'] *= par['W_rnn_mask']
+		Z_rnn_exc = tf.sqrt(tf.reduce_sum(tf.nn.relu(self.var_dict['W_rnn_exc'])**2, axis = 0, keep_dims = True))
+		Z_rnn_inh = tf.sqrt(tf.reduce_sum(tf.nn.relu(self.var_dict['W_rnn_inh'])**2, axis = 0, keep_dims = True))
 
 		self.W_in = self.var_dict['W_in']/Z_in
 
@@ -61,7 +67,9 @@ class Model:
 			#input_data = self.input_data[t]/tf.reduce_sum(self.input_data[t]+1e-9, axis=1, keep_dims=True)
 			#input_data = self.input_data[t] - tf.reduce_mean(self.input_data[t], axis=(0,1), keep_dims=True)
 
-			h = self.input_data[t] @ self.var_dict['W_in']/Z_in + h @ self.var_dict['W_rnn']/Z_rnn + tf.random_normal(tf.shape(h), 0., 0.05)
+			rnn_exc =  h @ (par['W_rnn_mask']*tf.nn.relu(self.var_dict['W_rnn_exc'])/Z_rnn_exc)
+			rnn_inh =  h @ (par['W_rnn_mask']*tf.nn.relu(self.var_dict['W_rnn_inh'])/Z_rnn_inh)
+			h = self.input_data[t] @ self.var_dict['W_in']/Z_in + tf.random_normal(tf.shape(h), 0., 0.1)
 
 			h = tf.nn.softmax(2*tf.nn.sigmoid(c)*h, dim = -1)
 			self.raw_hidden_hist.append(h)
@@ -71,7 +79,7 @@ class Model:
 
 
 
-			c = (1-par['alpha_neuron'])*c + par['alpha_neuron']*(h @ self.var_dict['W_rnn'])
+			c = (1-par['alpha_neuron'])*c + par['alpha_neuron']*(rnn_exc - rnn_inh)
 
 			self.hidden_hist.append(h)
 			self.gate_hist.append(tf.nn.sigmoid(c))
@@ -90,9 +98,11 @@ class Model:
 		for ind, (l, opt) in enumerate(zip(loss, self.hidden_optimizers)):
 
 			this_loss  = -par['spike_cost']*l
+			"""
 			this_loss += par['weight_cost']*( \
 				tf.reduce_mean(tf.abs(self.var_dict['W_in'][:,ind])**1) + \
 				tf.reduce_mean(tf.abs(self.var_dict['W_rnn'][:,ind])**1)/10 )
+			"""
 
 
 			losses.append(this_loss)
@@ -138,7 +148,7 @@ def main(gpu_id=None):
 			_, loss, h, c, hc, W_in = sess.run([model.train, model.loss, model.raw_hidden_hist, model.gate_hist, \
 				model.hidden_hist, model.W_in], feed_dict=feed_dict)
 
-			if i%50 == 0:
+			if i%100 == 0:
 				print('Iter: {:>4} | h-Loss: {:5.8f} |'.format(i, loss))
 
 				ind = np.zeros((4), dtype = np.int8)
