@@ -39,6 +39,7 @@ class MultiStimulus:
 
         # Matching task stuff
         self.match_delay = np.array([200, 400, 800])//par['dt']
+        self.match_delay = np.array([100, 200, 300])//par['dt']
 
         # Initialize task interface
         self.get_tasks()
