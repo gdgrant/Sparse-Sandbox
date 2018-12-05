@@ -33,7 +33,7 @@ par = {
 
     # Timings and rates
     'dt'                    : 20,
-    'learning_rate'         : 1e-3,
+    'learning_rate'         : 2e-3,
     'membrane_time_constant': 200,
     'connection_prob'       : 0.1,
     'discount_rate'         : 0.,
@@ -49,7 +49,7 @@ par = {
     #'n_tasks'               : 20,
     'task'                  : 'dmrs',
     'n_tasks'               : 4,
-    'multistim_trial_length': 2000,
+    'multistim_trial_length': 1500,
     'mask_duration'         : 0,
     'dead_time'             : 200,
 
@@ -156,7 +156,7 @@ def update_dependencies():
 
     par['norm_matrix'] = np.zeros((par['n_hidden'], par['n_hidden']), dtype = np.float32)
     N = par['n_hidden']//4
-    N = 40
+    N = 20
     for i in range(par['n_hidden']):
         #j = N*(i//N)
         u = np.arange(i,i+N)%par['n_hidden']
@@ -185,8 +185,11 @@ def update_dependencies():
         par['W_rnn_mask'] = np.ones((par['n_hidden'], par['n_hidden']), dtype=np.float32) - np.eye(par['n_hidden'])
         par['W_rnn_init'] *= par['W_rnn_mask']
     else:
-        par['W_rnn_init'] = np.float32(np.random.uniform(-c, c, size = [par['n_hidden'], par['n_hidden']]))
-        par['W_rnn_mask'] = np.ones((par['n_hidden'], par['n_hidden']), dtype=np.float32)
+        par['W_rnn_exc_init'] = np.float32(np.random.gamma(shape=0.1, scale=1.0, size = [par['n_hidden'], par['n_hidden']]))
+        par['W_rnn_inh_init'] = np.float32(np.random.gamma(shape=0.1, scale=1.0, size = [par['n_hidden'], par['n_hidden']]))
+        par['W_rnn_mask'] = np.ones((par['n_hidden'], par['n_hidden']), dtype=np.float32) - np.eye(par['n_hidden'], dtype=np.float32)
+        par['W_rnn_exc_init'] *= par['W_rnn_mask']
+        par['W_rnn_inh_init'] *= par['W_rnn_mask']
 
     # Initialize biases
     par['b_rnn_init'] = np.zeros((1,par['n_hidden']), dtype = np.float32)
