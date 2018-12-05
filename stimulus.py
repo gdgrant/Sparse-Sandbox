@@ -121,7 +121,10 @@ class MultiStimulus:
             'neural_input'   : np.random.normal(par['input_mean'], par['noise_in'], size=self.input_shape),
             'desired_output' : np.zeros(self.output_shape, dtype=np.float32),
             'reward_data'    : np.zeros(self.output_shape, dtype=np.float32),
-            'train_mask'     : np.ones(self.mask_shape, dtype=np.float32)}
+            'train_mask'     : np.ones(self.mask_shape, dtype=np.float32),
+            'sample'     : np.ones(self.mask_shape, dtype=np.int8),
+            'test'     : np.ones(self.mask_shape, dtype=np.int8),
+            'match'     : np.ones(self.mask_shape, dtype=np.int8)}
 
         self.trial_info['train_mask'][:par['dead_time']//par['dt'], :] = 0
 
@@ -129,7 +132,7 @@ class MultiStimulus:
             rule_signal = np.zeros((1,1,par['num_rule_tuned']))
             rule_signal[0,0,current_task] = par['tuning_height']
             self.trial_info['neural_input'][:, :, -par['num_rule_tuned']:] += rule_signal*self.rule_signal_factor
-  
+
         task = self.task_types[current_task]    # Selects a task from the list
         task[0](*task[1:])                      # Generates that task into trial_info
 
@@ -163,7 +166,8 @@ class MultiStimulus:
 
         # Returns the task name and trial info
         return task[1], self.trial_info['neural_input'], self.trial_info['desired_output'], \
-            self.trial_info['train_mask'], self.trial_info['reward_data']
+            self.trial_info['train_mask'], self.trial_info['reward_data'], \
+            self.trial_info['sample'],self.trial_info['test'],self.trial_info['match'],
 
 
     def task_go(self, variant='go', offset=0):
@@ -416,6 +420,11 @@ class MultiStimulus:
             match = np.logical_not(np.logical_xor(stim1_cat, stim2_cat))
         else:
             raise Exception('Bad variant.')
+
+        self.trial_info['match'] = np.int8(match)
+        self.trial_info['sample'] = np.int8(par['num_motion_dirs']*stim1/2/np.pi)
+        self.trial_info['test'] = np.int8(par['num_motion_dirs']*stim2/2/np.pi)
+
 
         # Establishing stimuli
         stimulus1 = self.circ_tuning(stim1)
